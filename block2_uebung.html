@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="de-CH">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Block 2 · Übungsplattform · finanzunterricht.ch</title>
+<meta name="description" content="Interaktive Übungsplattform zu Kundenforderungen, Wertberichtigungen, Anzahlungen und Kundenanalyse. Finanzielles Rechnungswesen I, Block 2." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .font-serif { font-family: 'Fraunces', Georgia, serif; }
+  input[type="text"]:focus, input[type="number"]:focus { outline: none; }
+  @media print { .no-print { display: none !important; } }
+</style>
+</head>
+<body class="bg-stone-50">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+// ===== Icons =====
+const Icon = ({ d, className = "w-5 h-5" }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{d}</svg>
+);
+const CheckIcon = (p) => <Icon {...p} d={<polyline points="20 6 9 17 4 12" />} />;
+const XIcon = (p) => <Icon {...p} d={<><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>} />;
+const EyeIcon = (p) => <Icon {...p} d={<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>} />;
+const EyeOffIcon = (p) => <Icon {...p} d={<><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></>} />;
+const ChevronRightIcon = (p) => <Icon {...p} d={<polyline points="9 18 15 12 9 6" />} />;
+const ChevronLeftIcon = (p) => <Icon {...p} d={<polyline points="15 18 9 12 15 6" />} />;
+const RotateCcwIcon = (p) => <Icon {...p} d={<><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></>} />;
+const BookOpenIcon = (p) => <Icon {...p} d={<><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></>} />;
+const AwardIcon = (p) => <Icon {...p} d={<><circle cx="12" cy="8" r="7" /><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" /></>} />;
+const InfoIcon = (p) => <Icon {...p} d={<><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></>} />;
+
+// ===== Normalisierung & Match-Logik =====
+const normalize = (s) => (s || "")
+  .toString()
+  .toLowerCase()
+  .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^a-z0-9]/g, "");
+
+const normalizeNumber = (s) => (s || "").toString().replace(/['\s.,]/g, "").replace(/CHF/gi, "").trim();
+
+const accountMatchers = {
+  forderungen: { contains: ["forderung", "debitor", "kundenguthaben"], excludes: ["wertberichtigung", "delkredere", "wbforderung", "wbford", "verbindlichkeit", "kreditor", "verlust", "anzahlung", "abschreibung"] },
+  wbforderungen: { contains: ["wertberichtigung", "delkredere", "wbforderung", "wbfll", "wbford"], excludes: [] },
+  verbindlichkeiten: { contains: ["verbindlichkeit", "kreditor"], excludes: ["forderung", "debitor"] },
+  bank: { contains: ["bank"], excludes: [] },
+  postfinance: { contains: ["post"], excludes: [] },
+  kasse: { contains: ["kass", "bargeld"], excludes: [] },
+  betriebsertrag: { contains: ["betriebsertrag", "warenertrag", "umsatz", "verkaufserloes", "warenverkauf", "ertraglieferung", "nettoerloes"], excludes: ["aufwand", "minderung"] },
+  warenaufwand: { contains: ["warenaufwand", "einstandspreis", "materialaufwand", "aufwandlieferung"], excludes: ["ertrag"] },
+  verlusteausforderungen: { contains: ["verlust", "forderungsverlust", "debitorenverlust", "abschreibungforderung"], excludes: ["wertberichtigung", "delkredere"] },
+  aoertrag: { contains: ["ausserordentlich", "aussordentlich", "aoertrag", "periodenfremd"], excludes: ["aufwand"] },
+  skontoertrag: { contains: ["skonto"], excludes: ["verkauf", "kunden", "minderung"] },
+  maschinen: { contains: ["maschine", "sachanlage", "anlagevermoegen"], excludes: [] },
+  anzahlungenlieferanten: { contains: ["anzahlung", "geleisteteanzahlung"], excludes: ["kunden"] },
+  privat: { contains: ["privat"], excludes: ["aufwand", "ertrag"] },
+  erfolgsrechnung: { contains: ["erfolg", "gewinnundverlust"], excludes: [] },
+  erloesminderungen: { contains: ["erloesminderung", "rabatt", "kundenskonto", "verkaufsskonto", "skontiverkauf"], excludes: [] },
+};
+
+const matchAccount = (input, key) => {
+  const n = normalize(input);
+  if (!n) return false;
+  const m = accountMatchers[key];
+  if (!m) return false;
+  if (!m.contains.some(c => n.includes(c))) return false;
+  return !m.excludes.some(e => n.includes(e));
+};
+
+const checkEntry = (entry, correctOptions) => {
+  if (!entry.soll || !entry.haben || !entry.betrag) return false;
+  return correctOptions.some((opt) => {
+    const sollMatch = opt.sollKeys.some((k) => matchAccount(entry.soll, k));
+    const habenMatch = opt.habenKeys.some((k) => matchAccount(entry.haben, k));
+    const betragMatch = normalizeNumber(entry.betrag) === normalizeNumber(opt.betrag.toString());
+    return sollMatch && habenMatch && betragMatch;
+  });
+};
+
+const diagnoseEntry = (entry, correctOptions) => {
+  if (!entry.soll && !entry.haben && !entry.betrag) return { sollOk: false, habenOk: false, betragOk: false };
+  let bestMatch = { sollOk: false, habenOk: false, betragOk: false, score: -1 };
+  for (const opt of correctOptions) {
+    const sollOk = opt.sollKeys.some((k) => matchAccount(entry.soll, k));
+    const habenOk = opt.habenKeys.some((k) => matchAccount(entry.haben, k));
+    const betragOk = normalizeNumber(entry.betrag) === normalizeNumber(opt.betrag.toString());
+    const score = (sollOk?1:0) + (habenOk?1:0) + (betragOk?1:0);
+    if (score > bestMatch.score) bestMatch = { sollOk, habenOk, betragOk, score };
+  }
+  return bestMatch;
+};
+
+const displayNames = {
+  forderungen: "Forderungen L+L", wbforderungen: "WB Forderungen L+L", verbindlichkeiten: "Verbindlichkeiten L+L",
+  bank: "Bank", postfinance: "PostFinance", kasse: "Kasse",
+  betriebsertrag: "Betriebsertrag", warenaufwand: "Warenaufwand",
+  verlusteausforderungen: "Verluste aus Forderungen L+L", aoertrag: "Ausserordentlicher Ertrag",
+  skontoertrag: "Skontoertrag", maschinen: "Maschinen", anzahlungenlieferanten: "Anzahlungen an Lieferanten",
+  privat: "Privat", erfolgsrechnung: "Erfolgsrechnung", erloesminderungen: "Erlösminderungen",
+};
+
+// ===== Aufgaben-Daten =====
+const aufgabe1 = {
+  title: "Aufgabe 1: Endgültige und mutmassliche Verluste",
+  subtitle: "Kundenverkehr über zwei Jahre, Zahlungen über Bank",
+  tabLabel: "Aufgabe 1",
+  faelle: [
+    { id: "1-j1-1", label: "Jahr 1 · Eröffnung", text: "Eröffnungsbestand: Forderungen L+L 120 / WB Forderungen L+L 12. (Reine Eröffnung, keine Buchung notwendig.)", keineEingabe: true, loesung: "Eröffnungsbuchungen werden aus der Eröffnungsbilanz übernommen. Keine eigene Buchung im laufenden Geschäft." },
+    { id: "1-j1-2", label: "Jahr 1 · Fall 2", text: "Kundenrechnungen CHF 1'250", loesungen: [[{ sollKeys: ["forderungen"], habenKeys: ["betriebsertrag"], betrag: 1250 }]] },
+    { id: "1-j1-3", label: "Jahr 1 · Fall 3", text: "Kundenzahlungen CHF 1'180 auf die Bank", loesungen: [[{ sollKeys: ["bank"], habenKeys: ["forderungen"], betrag: 1180 }]] },
+    { id: "1-j1-4", label: "Jahr 1 · Fall 4", text: "Kunde Meier ist in Konkurs geraten, endgültiger Verlust CHF 60", loesungen: [[{ sollKeys: ["verlusteausforderungen"], habenKeys: ["forderungen"], betrag: 60 }]] },
+    { id: "1-j1-5", label: "Jahr 1 · Abschluss", text: "Abschluss: Neue WB = 5% von CHF 130 (kaufm. gerundet) = CHF 7. Bestehende WB CHF 12 → Auflösung CHF 5.", loesungen: [[{ sollKeys: ["wbforderungen"], habenKeys: ["verlusteausforderungen"], betrag: 5 }]] },
+    { id: "1-j2-2", label: "Jahr 2 · Fall 2", text: "Kundenrechnungen CHF 1'480", loesungen: [[{ sollKeys: ["forderungen"], habenKeys: ["betriebsertrag"], betrag: 1480 }]] },
+    { id: "1-j2-3", label: "Jahr 2 · Fall 3", text: "Kundenzahlungen CHF 1'430 auf die Bank", loesungen: [[{ sollKeys: ["bank"], habenKeys: ["forderungen"], betrag: 1430 }]] },
+    { id: "1-j2-4", label: "Jahr 2 · Fall 4", text: "Kunde Breitenmoser: Rechnung CHF 28, Nachlass CHF 8 gewährt, Rest CHF 20 auf Bank überwiesen. (2 Buchungen)", anzahlBuchungen: 2, loesungen: [[{ sollKeys: ["verlusteausforderungen", "erloesminderungen"], habenKeys: ["forderungen"], betrag: 8 }, { sollKeys: ["bank"], habenKeys: ["forderungen"], betrag: 20 }]] },
+    { id: "1-j2-5", label: "Jahr 2 · Abschluss", text: "Abschluss: Neue WB = 5% von CHF 152 (kaufm. gerundet) = CHF 8. Bestehende WB CHF 7 → Erhöhung CHF 1.", loesungen: [[{ sollKeys: ["verlusteausforderungen"], habenKeys: ["wbforderungen"], betrag: 1 }]] },
+  ],
+  kontenLoesung: {
+    konten: [
+      { name: "Forderungen L+L", jahr1: { soll: [["Eröffnung", 120], ["Betriebsertrag", 1250]], haben: [["Bank", 1180], ["Verluste aus Ford.", 60], ["Saldo (Vortrag)", 130]] }, jahr2: { soll: [["Eröffnung", 130], ["Betriebsertrag", 1480]], haben: [["Bank", 1430], ["Verluste aus Ford.", 8], ["Bank", 20], ["Saldo (Vortrag)", 152]] } },
+      { name: "WB Forderungen L+L", jahr1: { soll: [["Verluste aus Ford. (Auflösung)", 5], ["Saldo", 7]], haben: [["Eröffnung", 12]] }, jahr2: { soll: [["Saldo", 8]], haben: [["Eröffnung", 7], ["Verluste aus Ford. (Erhöhung)", 1]] } },
+      { name: "Verluste aus Forderungen", jahr1: { soll: [["Forderungen L+L (Konkurs Meier)", 60]], haben: [["WB Forderungen (Auflösung)", 5], ["Erfolgsrechnung", 55]] }, jahr2: { soll: [["Forderungen L+L (Nachlass)", 8], ["WB Forderungen (Erhöhung)", 1]], haben: [["Erfolgsrechnung", 9]] } },
+    ],
+  },
+};
+
+const aufgabe2 = {
+  title: "Aufgabe 2: Typische Buchungen zu Kundenguthaben",
+  subtitle: "10 Standard-Geschäftsfälle",
+  tabLabel: "Aufgabe 2",
+  faelle: [
+    { id: "2-1", label: "Fall 1", text: "Wir stellen Kunden Rechnungen im Betrag von CHF 1'680.", loesungen: [[{ sollKeys: ["forderungen"], habenKeys: ["betriebsertrag"], betrag: 1680 }]] },
+    { id: "2-2", label: "Fall 2", text: "Konkursverfahren abgeschlossen, Forderung CHF 850 wird abgeschrieben.", loesungen: [[{ sollKeys: ["verlusteausforderungen"], habenKeys: ["forderungen"], betrag: 850 }]] },
+    { id: "2-3", label: "Fall 3", text: "Betreibung gegen Kunden, Kostenvorschuss CHF 50 über Bank bezahlt und dem Kunden belastet.", loesungen: [[{ sollKeys: ["forderungen"], habenKeys: ["bank"], betrag: 50 }]] },
+    { id: "2-4", label: "Fall 4", text: "Kunden zahlen Rechnung von CHF 750 auf die Bank.", loesungen: [[{ sollKeys: ["bank"], habenKeys: ["forderungen"], betrag: 750 }]] },
+    { id: "2-5", label: "Fall 5", text: "Nachlassvertrag mit Kunden: CHF 60 werden abgeschrieben.", loesungen: [[{ sollKeys: ["verlusteausforderungen"], habenKeys: ["forderungen"], betrag: 60 }]] },
+    { id: "2-6", label: "Fall 6", text: "Unerwartete Zahlung CHF 95 auf Bank von einem im Vorjahr abgeschriebenen Kunden.", loesungen: [[{ sollKeys: ["bank"], habenKeys: ["verlusteausforderungen", "aoertrag"], betrag: 95 }]] },
+    { id: "2-7", label: "Fall 7", text: "Kunde Konkurs, Forderung CHF 1'500, Konkursdividende 30% auf Bank, Rest abschreiben. (2 Buchungen)", anzahlBuchungen: 2, loesungen: [[{ sollKeys: ["bank"], habenKeys: ["forderungen"], betrag: 450 }, { sollKeys: ["verlusteausforderungen"], habenKeys: ["forderungen"], betrag: 1050 }]] },
+    { id: "2-8", label: "Fall 8", text: "Rabatt von CHF 80 an Kunden gutschreiben.", loesungen: [[{ sollKeys: ["erloesminderungen", "betriebsertrag"], habenKeys: ["forderungen"], betrag: 80 }]] },
+    { id: "2-9", label: "Fall 9", text: "Betreibungsamt überweist CHF 120, Rest CHF 150 wird abgeschrieben. (2 Buchungen)", anzahlBuchungen: 2, loesungen: [[{ sollKeys: ["bank"], habenKeys: ["forderungen"], betrag: 120 }, { sollKeys: ["verlusteausforderungen"], habenKeys: ["forderungen"], betrag: 150 }]] },
+    { id: "2-10", label: "Fall 10", text: "WB Forderungen L+L aktuell CHF 300, neu geschätzt CHF 260 (Auflösung CHF 40).", loesungen: [[{ sollKeys: ["wbforderungen"], habenKeys: ["verlusteausforderungen"], betrag: 40 }]] },
+  ],
+};
+
+const aufgabe3 = {
+  title: "Aufgabe 3: Geschäftsfälle zu Forderungen und Verbindlichkeiten",
+  subtitle: "12 Fälle plus Abschluss",
+  tabLabel: "Aufgabe 3",
+  faelle: [
+    { id: "3-1", label: "Fall 1", text: "Konkursdividende 14% = CHF 280 auf PostFinance (Gesamtforderung CHF 2'000, Rest CHF 1'720 verloren). (2 Buchungen)", anzahlBuchungen: 2, loesungen: [[{ sollKeys: ["postfinance"], habenKeys: ["forderungen"], betrag: 280 }, { sollKeys: ["verlusteausforderungen"], habenKeys: ["forderungen"], betrag: 1720 }]] },
+    { id: "3-2", label: "Fall 2", text: "Verlustschein aus März, im November CHF 120 bar erhalten.", loesungen: [[{ sollKeys: ["kasse"], habenKeys: ["verlusteausforderungen"], betrag: 120 }]] },
+    { id: "3-3", label: "Fall 3", text: "Nachlassvertrag: 70% Schuldennachlass auf CHF 5'900 = CHF 4'130 Verlust, Rest gestundet.", loesungen: [[{ sollKeys: ["verlusteausforderungen"], habenKeys: ["forderungen"], betrag: 4130 }]] },
+    { id: "3-4", label: "Fall 4", text: "Vor 4 Jahren erfolglos betriebener Schuldner überweist CHF 250 auf Bank.", loesungen: [[{ sollKeys: ["bank"], habenKeys: ["aoertrag", "verlusteausforderungen"], betrag: 250 }]] },
+    { id: "3-5", label: "Fall 5", text: "Schuldner bringt CHF 300 bar, Restschuld CHF 410 wird erlassen. (2 Buchungen)", anzahlBuchungen: 2, loesungen: [[{ sollKeys: ["kasse"], habenKeys: ["forderungen"], betrag: 300 }, { sollKeys: ["verlusteausforderungen"], habenKeys: ["forderungen"], betrag: 410 }]] },
+    { id: "3-6", label: "Fall 6", text: "Konkurs CHF 2'500, Dividende 30% auf PostFinance, Rest Verlustausweis. (2 Buchungen)", anzahlBuchungen: 2, loesungen: [[{ sollKeys: ["postfinance"], habenKeys: ["forderungen"], betrag: 750 }, { sollKeys: ["verlusteausforderungen"], habenKeys: ["forderungen"], betrag: 1750 }]] },
+    { id: "3-7", label: "Fall 7", text: "Privater Nachlassvertrag: 40% von CHF 9'600 = CHF 3'840 Verlust.", loesungen: [[{ sollKeys: ["verlusteausforderungen"], habenKeys: ["forderungen"], betrag: 3840 }]] },
+    { id: "3-8", label: "Fall 8", text: "Vor 4 Jahren in Konkurs geratener Kunde überweist CHF 800 auf Bank.", loesungen: [[{ sollKeys: ["bank"], habenKeys: ["aoertrag", "verlusteausforderungen"], betrag: 800 }]] },
+    { id: "3-9", label: "Fall 9", text: "Konkurs CHF 4'000, Dividende 8% auf PostFinance, Rest definitiv verloren. (2 Buchungen)", anzahlBuchungen: 2, loesungen: [[{ sollKeys: ["postfinance"], habenKeys: ["forderungen"], betrag: 320 }, { sollKeys: ["verlusteausforderungen"], habenKeys: ["forderungen"], betrag: 3680 }]] },
+    { id: "3-10", label: "Fall 10", text: "Betreibungsspesen CHF 85 durch Bank bezahlt und dem Kunden belastet.", loesungen: [[{ sollKeys: ["forderungen"], habenKeys: ["bank"], betrag: 85 }]] },
+    { id: "3-11", label: "Fall 11", text: "Rechnung CHF 5'000 (Waren) unter Abzug von 2% Skonto durch Bank bezahlt. (2 Buchungen)", anzahlBuchungen: 2, loesungen: [[{ sollKeys: ["verbindlichkeiten"], habenKeys: ["bank"], betrag: 4900 }, { sollKeys: ["verbindlichkeiten"], habenKeys: ["skontoertrag", "warenaufwand"], betrag: 100 }]] },
+    { id: "3-12", label: "Fall 12", text: "Geschäftsinhaber überweist CHF 12'500 aus privaten Mitteln auf Geschäftskonto.", loesungen: [[{ sollKeys: ["bank"], habenKeys: ["privat"], betrag: 12500 }]] },
+    { id: "3-13", label: "Abschluss", text: "Konto «Verluste aus Forderungen L+L» per 31.12. abschliessen. Der Saldo wird gegen die Erfolgsrechnung gebucht.", freitext: true, loesung: "Erfolgsrechnung / Verluste aus Forderungen L+L (Saldo). Der Saldobetrag ergibt sich aus der Summe aller Buchungen auf dem Verlustkonto." },
+  ],
+};
+
+const aufgabe4 = {
+  title: "Aufgabe 4: Anzahlungen von Lieferanten",
+  subtitle: "Gallo Maschinenfabrik AG, Kaufpreis CHF 900'000",
+  tabLabel: "Aufgabe 4",
+  context: "Zahlungs- und Lieferbedingungen: 1/3 Anzahlung bei Bestellung, 1/3 bei Lieferung (15.08.), Rest 2 Monate nach Lieferung. Alle Zahlungen über Bank.",
+  faelle: [
+    { id: "4-1", label: "Fall 1 · Bestellung", text: "Lieferant sendet Rechnung über Anzahlung CHF 300'000, wir bezahlen sofort. (2 Buchungen)", anzahlBuchungen: 2, loesungen: [[{ sollKeys: ["anzahlungenlieferanten"], habenKeys: ["verbindlichkeiten"], betrag: 300000 }, { sollKeys: ["verbindlichkeiten"], habenKeys: ["bank"], betrag: 300000 }]] },
+    { id: "4-2", label: "Fall 2 · Lieferung 15.08.", text: "Lieferung der Maschinen. Restrechnung über CHF 600'000 erhalten, zweites Drittel CHF 300'000 bezahlt. (3 Buchungen)", anzahlBuchungen: 3, loesungen: [[{ sollKeys: ["maschinen"], habenKeys: ["verbindlichkeiten"], betrag: 900000 }, { sollKeys: ["verbindlichkeiten"], habenKeys: ["anzahlungenlieferanten"], betrag: 300000 }, { sollKeys: ["verbindlichkeiten"], habenKeys: ["bank"], betrag: 300000 }]] },
+    { id: "4-3", label: "Fall 3 · Restzahlung", text: "Restzahlung CHF 300'000 zwei Monate nach Lieferung.", loesungen: [[{ sollKeys: ["verbindlichkeiten"], habenKeys: ["bank"], betrag: 300000 }]] },
+  ],
+};
+
+const aufgabe6 = {
+  title: "Aufgabe 6: Kunden- und Lieferantenanalyse",
+  subtitle: "Velowerk GmbH Luzern · Kennzahlen, Altersstruktur, Massnahmen (Lernziel 1.4.2-K4)",
+  tabLabel: "Aufgabe 6",
+  context: "Die Velowerk GmbH Luzern schliesst das Geschäftsjahr per 31.12. ab. Die Geschäftsleitung möchte die Qualität des Debitorenbestands analysieren und geeignete Massnahmen zur Reduktion der Forderungsverluste ableiten.",
+  sachverhalt: {
+    kennzahlen: {
+      cols: ["Position", "Vorjahr (CHF)", "Aktuelles Jahr (CHF)"],
+      rows: [
+        ["Nettoerlös aus Warenverkauf", "2'400'000", "2'640'000"],
+        ["Warenaufwand", "1'560'000", "1'800'000"],
+        ["Forderungen L+L per 31.12.", "320'000", "440'000"],
+        ["Verbindlichkeiten L+L per 31.12.", "195'000", "225'000"],
+        ["Forderungsverluste (endgültig)", "18'000", "34'000"],
+        ["Wertberichtigung Ford. L+L per 31.12.", "16'000", "22'000"],
+      ],
+    },
+    altersstruktur: {
+      title: "Altersstruktur der Forderungen per 31.12. (aktuelles Jahr)",
+      cols: ["Fälligkeitsklasse", "Betrag (CHF)", "Anteil", "WB-Satz"],
+      rows: [
+        ["nicht fällig", "264'000", "60 %", "1 %"],
+        ["1-30 Tage überfällig", "88'000", "20 %", "3 %"],
+        ["31-60 Tage überfällig", "44'000", "10 %", "8 %"],
+        ["61-90 Tage überfällig", "26'400", "6 %", "20 %"],
+        ["über 90 Tage überfällig", "17'600", "4 %", "40 %"],
+        ["Total", "440'000", "100 %", ""],
+      ],
+    },
+  },
+  faelle: [
+    // Teil A: Kennzahlen
+    { id: "6-A0", typ: "abschnitt", label: "Teil A · Kennzahlen berechnen" },
+    { id: "6-A1a", typ: "kennzahl", label: "A1 · Debitorenfrist Vorjahr",
+      text: "Berechnen Sie die Debitorenfrist im Vorjahr. Formel: Forderungen L+L × 365 / Nettoerlös. Auf ganze Tage runden.",
+      erwartet: 49, einheit: "Tage", toleranz: 1,
+      loesung: "320'000 × 365 / 2'400'000 = 116'800'000 / 2'400'000 = 48.67 Tage → gerundet 49 Tage" },
+    { id: "6-A1b", typ: "kennzahl", label: "A1 · Debitorenfrist aktuelles Jahr",
+      text: "Debitorenfrist im aktuellen Jahr.",
+      erwartet: 61, einheit: "Tage", toleranz: 1,
+      loesung: "440'000 × 365 / 2'640'000 = 160'600'000 / 2'640'000 = 60.83 Tage → gerundet 61 Tage" },
+    { id: "6-A2a", typ: "kennzahl", label: "A2 · Kreditorenfrist Vorjahr",
+      text: "Berechnen Sie die Kreditorenfrist im Vorjahr. Formel: Verbindlichkeiten L+L × 365 / Warenaufwand. Auf ganze Tage runden.",
+      erwartet: 46, einheit: "Tage", toleranz: 1,
+      loesung: "195'000 × 365 / 1'560'000 = 45.62 Tage → gerundet 46 Tage" },
+    { id: "6-A2b", typ: "kennzahl", label: "A2 · Kreditorenfrist aktuelles Jahr",
+      text: "Kreditorenfrist im aktuellen Jahr.",
+      erwartet: 46, einheit: "Tage", toleranz: 1,
+      loesung: "225'000 × 365 / 1'800'000 = 45.63 Tage → gerundet 46 Tage" },
+    { id: "6-A3a", typ: "kennzahl", label: "A3 · Forderungsverlustquote Vorjahr",
+      text: "Berechnen Sie die Forderungsverlustquote im Vorjahr (in %). Formel: Forderungsverluste / Nettoerlös × 100.",
+      erwartet: 0.75, einheit: "%", toleranz: 0.05,
+      loesung: "18'000 / 2'400'000 = 0.0075 = 0.75 %" },
+    { id: "6-A3b", typ: "kennzahl", label: "A3 · Forderungsverlustquote aktuelles Jahr",
+      text: "Forderungsverlustquote im aktuellen Jahr (in %).",
+      erwartet: 1.29, einheit: "%", toleranz: 0.05,
+      loesung: "34'000 / 2'640'000 = 0.01288 = 1.29 %" },
+    { id: "6-A4", typ: "interpretation", label: "A · Interpretation der Kennzahlen",
+      text: "Interpretieren Sie die Veränderung der Kennzahlen. Was sind die wichtigsten Beobachtungen?",
+      musterloesung: [
+        "Die Debitorenfrist hat sich um 12 Tage verschlechtert (49 → 61 Tage). Kunden zahlen erkennbar langsamer.",
+        "Die Liquiditätslücke (Vorfinanzierungsbedarf) beträgt aktuell 61 minus 46 = 15 Tage. Velowerk muss diese Lücke selbst überbrücken (z.B. über Kontokorrent).",
+        "Die Forderungsverlustquote hat sich nahezu verdoppelt (0.75 % → 1.29 %). Das deutet auf eine Verschlechterung der Kundenqualität oder Mängel im Inkasso hin.",
+        "Akuter Handlungsbedarf: Bonitätsprüfung verschärfen, Mahnwesen systematisieren, Kreditlimiten überprüfen."
+      ] },
+
+    // Teil B: Altersstruktur
+    { id: "6-B0", typ: "abschnitt", label: "Teil B · Altersstruktur analysieren" },
+    { id: "6-B1", typ: "wbtabelle", label: "B1 · Differenzierte Wertberichtigung",
+      text: "Berechnen Sie die WB pro Fälligkeitsklasse (Betrag × Satz) und das Total.",
+      zeilen: [
+        { klasse: "nicht fällig", betrag: 264000, satz: 1, erwartet: 2640 },
+        { klasse: "1-30 Tage überfällig", betrag: 88000, satz: 3, erwartet: 2640 },
+        { klasse: "31-60 Tage überfällig", betrag: 44000, satz: 8, erwartet: 3520 },
+        { klasse: "61-90 Tage überfällig", betrag: 26400, satz: 20, erwartet: 5280 },
+        { klasse: "über 90 Tage überfällig", betrag: 17600, satz: 40, erwartet: 7040 },
+      ],
+      erwartetTotal: 21120 },
+    { id: "6-B2", typ: "interpretation", label: "B2 · Vergleich mit pauschaler WB",
+      text: "Vergleichen Sie das Ergebnis mit der aktuellen pauschalen WB von CHF 22'000. Ist die aktuelle WB angemessen, zu hoch oder zu tief?",
+      musterloesung: [
+        "Pauschale WB: CHF 22'000",
+        "Differenzierte WB: CHF 21'120",
+        "Differenz: CHF 880 → die aktuelle pauschale WB ist um CHF 880 zu hoch (versteckte stille Reserve).",
+        "Eine differenzierte WB nach Altersstruktur ist gemäss Vorsichtsprinzip (Art. 960a OR) und Swiss GAAP FER präziser, da sie das tatsächliche Ausfallrisiko besser abbildet."
+      ] },
+    { id: "6-B3", typ: "buchung", label: "B3 · Buchung der Anpassung",
+      text: "Buchen Sie die Anpassung der WB (Auflösung um CHF 880).",
+      anzahlBuchungen: 1,
+      loesungen: [[{ sollKeys: ["wbforderungen"], habenKeys: ["verlusteausforderungen"], betrag: 880 }]] },
+
+    // Teil C: Massnahmen
+    { id: "6-C0", typ: "abschnitt", label: "Teil C · Verbesserungsmassnahmen ableiten" },
+    { id: "6-C1", typ: "interpretation", label: "C1 · Massnahmen zur Verkürzung der Debitorenfrist",
+      text: "Nennen Sie drei konkrete Massnahmen, um die Debitorenfrist zu verkürzen.",
+      musterloesung: [
+        "Skonto-Anreize: 2 % bei Zahlung innert 10 Tagen (lockt zu Frühzahlung).",
+        "Kürzere Zahlungsfristen vereinbaren (z.B. 20 statt 30 Tage Netto).",
+        "Konsequentes Mahnwesen mit fixen Mahnstufen (1. Mahnung nach 7 Tagen, 2. nach 14, 3. nach 21).",
+        "Rechnungsstellung sofort bei Lieferung statt monatliche Sammelrechnung.",
+        "Lastschriftverfahren (Direct Debit) für Stammkunden anbieten."
+      ] },
+    { id: "6-C2", typ: "interpretation", label: "C2 · Massnahmen zur Prävention von Forderungsverlusten",
+      text: "Nennen Sie zwei Massnahmen zur Prävention von Forderungsverlusten.",
+      musterloesung: [
+        "Bonitätsprüfung vor jedem grösseren Auftrag (Creditreform, Bisnode).",
+        "Kreditlimiten pro Kunde definieren und im ERP überwachen.",
+        "Anzahlungen bei Neukunden oder grossen Aufträgen verlangen.",
+        "Kreditversicherung für Forderungen über bestimmten Betrag abschliessen."
+      ] },
+    { id: "6-C3", typ: "interpretation", label: "C3 · Stellungnahme zu 2 % Skonto",
+      text: "Die Geschäftsleitung überlegt, ob sie allen Kunden 2 % Skonto bei Zahlung innert 10 Tagen anbieten soll. Welche Vor- und Nachteile hat diese Massnahme? Lohnt sich das aus Sicht der Velowerk GmbH?",
+      musterloesung: [
+        "Vorteile: Liquiditätsgewinn (schnellere Zahlungseingänge), Reduktion Forderungsverluste, Marketingeffekt (Kundenbindung), Reduktion Mahnaufwand.",
+        "Nachteile: Direkte Ertragsminderung (2 % von 2'640'000 = CHF 52'800 weniger Ertrag), hoher impliziter Zinssatz (~36 % p.a.), Mitnahmeeffekt bei pünktlich zahlenden Kunden, löst strukturelle Probleme nicht.",
+        "Empfehlung für Velowerk: Skonto-Satz auf 1 % reduzieren, nur für definierte Kundensegmente (z.B. Neukunden oder säumige Zahler), zwingend mit Bonitätsprüfung und Mahnwesen kombinieren, Wirkung nach 6 Monaten messen.",
+        "Fazit: Skonto ist Teil der Lösung, aber kein Allheilmittel. Strukturelle Massnahmen (Bonitätsprüfung, Limiten, Mahnwesen) wirken nachhaltiger."
+      ] },
+  ],
+};
+
+const alleAufgaben = [aufgabe1, aufgabe2, aufgabe3, aufgabe4, aufgabe6];
+
+// ===== Komponenten =====
+const BookingRow = ({ entry, onChange, locked, status, diagnose }) => {
+  const baseColor = status === "correct" ? "border-emerald-500 bg-emerald-50" : status === "wrong" ? "border-rose-400 bg-rose-50" : "border-stone-300 bg-white";
+  const fieldColor = (ok) => status === "wrong" ? (ok ? "border-emerald-400" : "border-rose-400 bg-rose-100/50") : "border-stone-300";
+  return (
+    <div className={`grid grid-cols-12 gap-2 p-2 rounded-md border ${baseColor} transition-colors`}>
+      <input type="text" placeholder="Soll-Konto" className={`col-span-5 px-3 py-2 bg-transparent border-b ${diagnose ? fieldColor(diagnose.sollOk) : "border-stone-300"} focus:border-[#1B6B63] text-sm`} value={entry.soll} onChange={(e) => onChange({ ...entry, soll: e.target.value })} disabled={locked} />
+      <input type="text" placeholder="Haben-Konto" className={`col-span-5 px-3 py-2 bg-transparent border-b ${diagnose ? fieldColor(diagnose.habenOk) : "border-stone-300"} focus:border-[#1B6B63] text-sm`} value={entry.haben} onChange={(e) => onChange({ ...entry, haben: e.target.value })} disabled={locked} />
+      <input type="text" placeholder="Betrag" className={`col-span-2 px-3 py-2 bg-transparent border-b ${diagnose ? fieldColor(diagnose.betragOk) : "border-stone-300"} focus:border-[#1B6B63] text-sm text-right`} value={entry.betrag} onChange={(e) => onChange({ ...entry, betrag: e.target.value })} disabled={locked} />
+    </div>
+  );
+};
+
+const FallCard = ({ fall, state, setState }) => {
+  const anzahl = fall.anzahlBuchungen || 1;
+  const entries = state.entries || Array.from({ length: anzahl }, () => ({ soll: "", haben: "", betrag: "" }));
+  const [showSolution, setShowSolution] = useState(false);
+
+  const updateEntry = (i, newEntry) => {
+    const newEntries = [...entries];
+    newEntries[i] = newEntry;
+    setState({ ...state, entries: newEntries, checked: false, diagnosen: null });
+  };
+
+  const pruefen = () => {
+    if (fall.freitext) {
+      setShowSolution(true);
+      setState({ ...state, checked: true, correct: true });
+      return;
+    }
+    const isCorrect = (fall.loesungen || []).some((variante) => {
+      if (variante.length !== entries.length) return false;
+      const used = new Array(variante.length).fill(false);
+      return entries.every((entry) => {
+        for (let i = 0; i < variante.length; i++) {
+          if (!used[i] && checkEntry(entry, [variante[i]])) { used[i] = true; return true; }
+        }
+        return false;
+      });
+    });
+    const diagnosen = entries.map((entry) => diagnoseEntry(entry, (fall.loesungen || []).flat()));
+    setState({ ...state, checked: true, correct: isCorrect, diagnosen });
+  };
+
+  const reset = () => {
+    setState({ entries: Array.from({ length: anzahl }, () => ({ soll: "", haben: "", betrag: "" })), checked: false, correct: false, diagnosen: null });
+    setShowSolution(false);
+  };
+
+  if (fall.keineEingabe) {
+    return (
+      <div className="bg-amber-50 border-l-4 border-[#F9E47A] rounded-md p-5 mb-4">
+        <span className="text-xs font-semibold tracking-widest text-stone-500 uppercase">{fall.label}</span>
+        <p className="text-stone-700 text-sm leading-relaxed mt-2">{fall.text}</p>
+        {fall.loesung && <p className="text-stone-600 text-xs mt-3 italic">{fall.loesung}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`bg-white rounded-lg border ${state.checked ? (state.correct ? "border-emerald-400" : "border-rose-400") : "border-stone-200"} shadow-sm p-5 mb-4 transition-all`}>
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <span className="text-xs font-semibold tracking-widest text-[#1B6B63] uppercase">{fall.label}</span>
+          <p className="text-stone-800 text-sm leading-relaxed mt-1">{fall.text}</p>
+        </div>
+        {state.checked && (
+          <div className={`ml-4 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${state.correct ? "bg-emerald-500" : "bg-rose-500"}`}>
+            {state.correct ? <CheckIcon className="w-5 h-5 text-white" /> : <XIcon className="w-5 h-5 text-white" />}
+          </div>
+        )}
+      </div>
+      {!fall.freitext && (
+        <div className="space-y-2 mt-4">
+          {entries.map((e, i) => (
+            <BookingRow key={i} entry={e} onChange={(ne) => updateEntry(i, ne)} locked={state.checked && state.correct} status={state.checked ? (state.correct ? "correct" : "wrong") : null} diagnose={state.checked && !state.correct && state.diagnosen ? state.diagnosen[i] : null} />
+          ))}
+        </div>
+      )}
+      {state.checked && !state.correct && state.diagnosen && (
+        <p className="text-xs text-rose-700 mt-2 italic">Rot markierte Felder sind falsch. Grün markierte sind korrekt.</p>
+      )}
+      <div className="flex flex-wrap gap-2 mt-4 no-print">
+        {!state.correct && <button onClick={pruefen} className="px-4 py-2 bg-[#1B6B63] text-white text-sm font-medium rounded-md hover:bg-[#154f49] transition-colors">Prüfen</button>}
+        {((state.checked && !state.correct) || showSolution) && (
+          <button onClick={() => setShowSolution(!showSolution)} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2">
+            {showSolution ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}{showSolution ? "Lösung verbergen" : "Lösung zeigen"}
+          </button>
+        )}
+        {state.checked && <button onClick={reset} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2"><RotateCcwIcon className="w-4 h-4" />Zurücksetzen</button>}
+      </div>
+      {showSolution && (
+        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+          <p className="text-xs font-semibold text-amber-900 uppercase tracking-widest mb-2">Musterlösung</p>
+          {fall.freitext ? (
+            <p className="text-sm text-stone-700">{fall.loesung}</p>
+          ) : (
+            <div className="space-y-1">
+              {(fall.loesungen || [[]])[0].map((b, i) => (
+                <div key={i} className="text-sm text-stone-700 font-mono">
+                  <span className="font-semibold">{displayNames[b.sollKeys[0]] || b.sollKeys[0]}</span>
+                  <span className="mx-2 text-stone-400">/</span>
+                  <span className="font-semibold">{displayNames[b.habenKeys[0]] || b.habenKeys[0]}</span>
+                  <span className="ml-4 text-[#1B6B63]">CHF {b.betrag.toLocaleString("de-CH")}</span>
+                </div>
+              ))}
+              <p className="text-xs text-stone-500 italic mt-2">Alternative Schreibweisen werden akzeptiert (z.B. Debitoren, Kreditoren, Warenertrag).</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Kennzahl-Karte (numerische Eingabe mit Toleranz)
+const KennzahlCard = ({ fall, state, setState }) => {
+  const wert = state.wert || "";
+  const [showSolution, setShowSolution] = useState(false);
+  const update = (v) => setState({ ...state, wert: v, checked: false });
+  const pruefen = () => {
+    const num = parseFloat(normalizeNumber(wert).replace(",", "."));
+    const ok = !isNaN(num) && Math.abs(num - fall.erwartet) <= fall.toleranz;
+    setState({ ...state, checked: true, correct: ok });
+  };
+  const reset = () => { setState({ wert: "", checked: false, correct: false }); setShowSolution(false); };
+
+  return (
+    <div className={`bg-white rounded-lg border ${state.checked ? (state.correct ? "border-emerald-400" : "border-rose-400") : "border-stone-200"} shadow-sm p-5 mb-4 transition-all`}>
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1">
+          <span className="text-xs font-semibold tracking-widest text-[#1B6B63] uppercase">{fall.label}</span>
+          <p className="text-stone-800 text-sm leading-relaxed mt-1">{fall.text}</p>
+        </div>
+        {state.checked && (
+          <div className={`ml-4 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${state.correct ? "bg-emerald-500" : "bg-rose-500"}`}>
+            {state.correct ? <CheckIcon className="w-5 h-5 text-white" /> : <XIcon className="w-5 h-5 text-white" />}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-3 mt-4 max-w-sm">
+        <input type="text" inputMode="decimal" placeholder="Wert eingeben" className={`flex-1 px-3 py-2 bg-white border-2 ${state.checked ? (state.correct ? "border-emerald-400" : "border-rose-400") : "border-stone-300"} rounded-md focus:border-[#1B6B63] text-base text-right font-mono`} value={wert} onChange={(e) => update(e.target.value)} disabled={state.checked && state.correct} />
+        <span className="text-stone-600 font-medium text-sm">{fall.einheit}</span>
+      </div>
+      <div className="flex flex-wrap gap-2 mt-4 no-print">
+        {!state.correct && <button onClick={pruefen} className="px-4 py-2 bg-[#1B6B63] text-white text-sm font-medium rounded-md hover:bg-[#154f49] transition-colors">Prüfen</button>}
+        {((state.checked && !state.correct) || showSolution) && (
+          <button onClick={() => setShowSolution(!showSolution)} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2">
+            {showSolution ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}{showSolution ? "Lösungsweg verbergen" : "Lösungsweg zeigen"}
+          </button>
+        )}
+        {state.checked && <button onClick={reset} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2"><RotateCcwIcon className="w-4 h-4" />Zurücksetzen</button>}
+      </div>
+      {showSolution && (
+        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+          <p className="text-xs font-semibold text-amber-900 uppercase tracking-widest mb-2">Lösungsweg</p>
+          <p className="text-sm text-stone-700 font-mono">{fall.loesung}</p>
+          <p className="text-sm text-[#1B6B63] font-bold mt-2">Resultat: {fall.erwartet.toLocaleString("de-CH")} {fall.einheit}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// WB-Tabellen-Karte
+const WBTabelleCard = ({ fall, state, setState }) => {
+  const eingaben = state.eingaben || fall.zeilen.map(() => "");
+  const [showSolution, setShowSolution] = useState(false);
+  const update = (i, v) => {
+    const ne = [...eingaben]; ne[i] = v;
+    setState({ ...state, eingaben: ne, checked: false });
+  };
+  const pruefen = () => {
+    const zeilenOk = eingaben.map((e, i) => {
+      const num = parseFloat(normalizeNumber(e).replace(",", "."));
+      return !isNaN(num) && Math.round(num) === fall.zeilen[i].erwartet;
+    });
+    const summe = eingaben.reduce((acc, e) => {
+      const n = parseFloat(normalizeNumber(e).replace(",", "."));
+      return acc + (isNaN(n) ? 0 : n);
+    }, 0);
+    const totalOk = Math.round(summe) === fall.erwartetTotal;
+    const allOk = zeilenOk.every(Boolean) && totalOk;
+    setState({ ...state, checked: true, correct: allOk, zeilenOk, totalOk, summe });
+  };
+  const reset = () => { setState({ eingaben: fall.zeilen.map(() => ""), checked: false, correct: false }); setShowSolution(false); };
+
+  const summe = eingaben.reduce((acc, e) => {
+    const n = parseFloat(normalizeNumber(e).replace(",", "."));
+    return acc + (isNaN(n) ? 0 : n);
+  }, 0);
+
+  return (
+    <div className={`bg-white rounded-lg border ${state.checked ? (state.correct ? "border-emerald-400" : "border-rose-400") : "border-stone-200"} shadow-sm p-5 mb-4 transition-all`}>
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1">
+          <span className="text-xs font-semibold tracking-widest text-[#1B6B63] uppercase">{fall.label}</span>
+          <p className="text-stone-800 text-sm leading-relaxed mt-1">{fall.text}</p>
+        </div>
+        {state.checked && (
+          <div className={`ml-4 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${state.correct ? "bg-emerald-500" : "bg-rose-500"}`}>
+            {state.correct ? <CheckIcon className="w-5 h-5 text-white" /> : <XIcon className="w-5 h-5 text-white" />}
+          </div>
+        )}
+      </div>
+      <div className="overflow-x-auto mt-4">
+        <table className="w-full text-sm">
+          <thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600">
+            <tr>
+              <th className="px-3 py-2 text-left">Fälligkeitsklasse</th>
+              <th className="px-3 py-2 text-right">Betrag (CHF)</th>
+              <th className="px-3 py-2 text-right">WB-Satz</th>
+              <th className="px-3 py-2 text-right">WB (CHF)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {fall.zeilen.map((z, i) => {
+              const ok = state.checked && state.zeilenOk && state.zeilenOk[i];
+              const fail = state.checked && state.zeilenOk && !state.zeilenOk[i];
+              return (
+                <tr key={i} className="border-t border-stone-100">
+                  <td className="px-3 py-2 text-stone-700">{z.klasse}</td>
+                  <td className="px-3 py-2 text-right font-mono text-stone-700">{z.betrag.toLocaleString("de-CH")}</td>
+                  <td className="px-3 py-2 text-right font-mono text-stone-700">{z.satz} %</td>
+                  <td className="px-3 py-2">
+                    <input type="text" inputMode="numeric" className={`w-32 px-2 py-1 border-2 rounded font-mono text-right text-sm ${ok ? "border-emerald-400 bg-emerald-50" : fail ? "border-rose-400 bg-rose-50" : "border-stone-300 bg-white"} focus:border-[#1B6B63]`} value={eingaben[i]} onChange={(e) => update(i, e.target.value)} disabled={state.correct} />
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className={`border-t-2 ${state.checked ? (state.totalOk ? "border-emerald-500 bg-emerald-50" : "border-rose-500 bg-rose-50") : "border-stone-300"}`}>
+              <td className="px-3 py-2 font-bold text-stone-800" colSpan="2">Total differenzierte WB</td>
+              <td className="px-3 py-2 text-right font-mono text-stone-700">100 %</td>
+              <td className="px-3 py-2 text-right font-mono font-bold text-stone-900">{summe.toLocaleString("de-CH", { maximumFractionDigits: 0 })}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap gap-2 mt-4 no-print">
+        {!state.correct && <button onClick={pruefen} className="px-4 py-2 bg-[#1B6B63] text-white text-sm font-medium rounded-md hover:bg-[#154f49] transition-colors">Prüfen</button>}
+        {((state.checked && !state.correct) || showSolution) && (
+          <button onClick={() => setShowSolution(!showSolution)} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2">
+            {showSolution ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}{showSolution ? "Lösung verbergen" : "Lösung zeigen"}
+          </button>
+        )}
+        {state.checked && <button onClick={reset} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2"><RotateCcwIcon className="w-4 h-4" />Zurücksetzen</button>}
+      </div>
+      {showSolution && (
+        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md overflow-x-auto">
+          <p className="text-xs font-semibold text-amber-900 uppercase tracking-widest mb-2">Musterlösung</p>
+          <table className="w-full text-sm">
+            <thead className="text-xs uppercase tracking-wider text-stone-600">
+              <tr><th className="px-2 py-1 text-left">Klasse</th><th className="px-2 py-1 text-right">Berechnung</th><th className="px-2 py-1 text-right">WB</th></tr>
+            </thead>
+            <tbody>
+              {fall.zeilen.map((z, i) => (
+                <tr key={i} className="border-t border-amber-200">
+                  <td className="px-2 py-1 text-stone-700">{z.klasse}</td>
+                  <td className="px-2 py-1 text-right font-mono text-stone-700">{z.betrag.toLocaleString("de-CH")} × {z.satz} %</td>
+                  <td className="px-2 py-1 text-right font-mono font-bold text-[#1B6B63]">{z.erwartet.toLocaleString("de-CH")}</td>
+                </tr>
+              ))}
+              <tr className="border-t-2 border-amber-400">
+                <td className="px-2 py-1 font-bold" colSpan="2">Total</td>
+                <td className="px-2 py-1 text-right font-mono font-bold text-[#1B6B63]">{fall.erwartetTotal.toLocaleString("de-CH")}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Interpretations-Karte (Reflexion mit aufdeckbarer Musterlösung)
+const InterpretationCard = ({ fall, state, setState }) => {
+  const [showSolution, setShowSolution] = useState(state?.correct || false);
+  const aufdecken = () => {
+    setShowSolution(true);
+    setState({ ...state, correct: true });
+  };
+  const reset = () => {
+    setShowSolution(false);
+    setState({ correct: false });
+  };
+
+  return (
+    <div className={`bg-white rounded-lg border ${state.correct ? "border-emerald-400" : "border-stone-200"} shadow-sm p-5 mb-4 transition-all`}>
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1">
+          <span className="text-xs font-semibold tracking-widest text-[#1B6B63] uppercase">{fall.label}</span>
+          <p className="text-stone-800 text-sm leading-relaxed mt-1">{fall.text}</p>
+        </div>
+        {state.correct && (
+          <div className="ml-4 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-emerald-500">
+            <CheckIcon className="w-5 h-5 text-white" />
+          </div>
+        )}
+      </div>
+      <p className="text-xs text-stone-500 italic mt-2">Tipp: Notiere deine Antwort auf Papier oder im Notizfeld. Decke danach die Musterlösung auf, um zu vergleichen.</p>
+      <div className="flex flex-wrap gap-2 mt-4 no-print">
+        {!showSolution && <button onClick={aufdecken} className="px-4 py-2 bg-[#1B6B63] text-white text-sm font-medium rounded-md hover:bg-[#154f49] transition-colors flex items-center gap-2"><EyeIcon className="w-4 h-4" />Musterlösung aufdecken</button>}
+        {showSolution && <button onClick={reset} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2"><RotateCcwIcon className="w-4 h-4" />Verbergen</button>}
+      </div>
+      {showSolution && (
+        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+          <p className="text-xs font-semibold text-amber-900 uppercase tracking-widest mb-2">Musterlösung</p>
+          <ul className="space-y-2">
+            {fall.musterloesung.map((m, i) => (
+              <li key={i} className="text-sm text-stone-700 flex gap-2">
+                <span className="text-[#1B6B63] font-bold flex-shrink-0">•</span>
+                <span>{m}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Abschnitts-Trenner für Aufgabe 6
+const AbschnittsTrenner = ({ label }) => (
+  <div className="my-6 flex items-center gap-3">
+    <div className="flex-1 h-px bg-stone-300"></div>
+    <span className="font-serif text-lg text-[#1B6B63] font-semibold whitespace-nowrap">{label}</span>
+    <div className="flex-1 h-px bg-stone-300"></div>
+  </div>
+);
+
+// Sachverhalt-Box (für Aufgabe 6)
+const SachverhaltBox = ({ daten }) => {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="bg-white border border-stone-200 rounded-lg shadow-sm mb-6 overflow-hidden">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-5 py-3 bg-stone-50 hover:bg-stone-100 transition-colors no-print">
+        <span className="font-serif text-base font-semibold text-stone-800 flex items-center gap-2"><InfoIcon className="w-4 h-4 text-[#1B6B63]" />Sachverhalt &amp; Daten</span>
+        <span className="text-stone-500 text-xs">{open ? "Verbergen" : "Anzeigen"}</span>
+      </button>
+      {open && (
+        <div className="p-5 space-y-5">
+          <div>
+            <h4 className="text-xs font-semibold tracking-widest uppercase text-stone-600 mb-2">Kennzahlen Vorjahr / Aktuell</h4>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-stone-50 text-xs uppercase tracking-wider text-stone-600">
+                  <tr>{daten.kennzahlen.cols.map((c, i) => <th key={i} className={`px-3 py-2 ${i === 0 ? "text-left" : "text-right"}`}>{c}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {daten.kennzahlen.rows.map((r, i) => (
+                    <tr key={i} className="border-t border-stone-100">
+                      {r.map((c, j) => <td key={j} className={`px-3 py-2 ${j === 0 ? "text-stone-700" : "text-right font-mono text-stone-800"}`}>{c}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <h4 className="text-xs font-semibold tracking-widest uppercase text-stone-600 mb-2">{daten.altersstruktur.title}</h4>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-stone-50 text-xs uppercase tracking-wider text-stone-600">
+                  <tr>{daten.altersstruktur.cols.map((c, i) => <th key={i} className={`px-3 py-2 ${i === 0 ? "text-left" : "text-right"}`}>{c}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {daten.altersstruktur.rows.map((r, i) => (
+                    <tr key={i} className={`border-t border-stone-100 ${i === daten.altersstruktur.rows.length - 1 ? "font-bold bg-stone-50" : ""}`}>
+                      {r.map((c, j) => <td key={j} className={`px-3 py-2 ${j === 0 ? "text-stone-700" : "text-right font-mono text-stone-800"}`}>{c}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Karten-Router
+const RenderCard = ({ fall, state, setState }) => {
+  if (fall.typ === "abschnitt") return <AbschnittsTrenner label={fall.label} />;
+  if (fall.typ === "kennzahl") return <KennzahlCard fall={fall} state={state} setState={setState} />;
+  if (fall.typ === "wbtabelle") return <WBTabelleCard fall={fall} state={state} setState={setState} />;
+  if (fall.typ === "interpretation") return <InterpretationCard fall={fall} state={state} setState={setState} />;
+  return <FallCard fall={fall} state={state} setState={setState} />;
+};
+
+// Kontenführung-Anzeige (Aufgabe 1)
+const KontenAnzeige = ({ daten }) => {
+  const [sichtbar, setSichtbar] = useState(false);
+  if (!sichtbar) {
+    return (
+      <div className="bg-stone-50 rounded-lg p-6 border border-stone-200 mb-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h3 className="font-serif text-lg text-stone-800">Teil B: Kontenführung</h3>
+            <p className="text-sm text-stone-600 mt-1">Forderungen L+L, WB Forderungen L+L, Verluste aus Forderungen über beide Jahre.</p>
+          </div>
+          <button onClick={() => setSichtbar(true)} className="px-4 py-2 bg-[#1B6B63] text-white text-sm font-medium rounded-md hover:bg-[#154f49] transition-colors flex items-center gap-2"><EyeIcon className="w-4 h-4" />Konten einblenden</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="bg-white rounded-lg border border-stone-200 p-6 mb-4">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-serif text-lg text-stone-800">Teil B: Kontenführung (Lösung)</h3>
+        <button onClick={() => setSichtbar(false)} className="text-sm text-stone-500 hover:text-stone-700 flex items-center gap-1 no-print"><EyeOffIcon className="w-4 h-4" />Verbergen</button>
+      </div>
+      <div className="space-y-6">
+        {daten.konten.map((konto, i) => (
+          <div key={i}>
+            <h4 className="font-semibold text-[#1B6B63] mb-2">{konto.name}</h4>
+            <div className="grid md:grid-cols-2 gap-4">
+              {["jahr1", "jahr2"].map((j) => (
+                <div key={j} className="border border-stone-200 rounded">
+                  <div className="bg-stone-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-stone-600 text-center">{j === "jahr1" ? "Jahr 1" : "Jahr 2"}</div>
+                  <div className="grid grid-cols-2 text-xs">
+                    <div className="border-r border-stone-200">
+                      <div className="bg-stone-50 px-2 py-1 font-semibold text-stone-600 text-center">Soll</div>
+                      {konto[j].soll.map((e, k) => (
+                        <div key={k} className="px-2 py-1 flex justify-between border-t border-stone-100">
+                          <span className="text-stone-700">{e[0]}</span>
+                          <span className="font-mono text-stone-800">{e[1].toLocaleString("de-CH")}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <div className="bg-stone-50 px-2 py-1 font-semibold text-stone-600 text-center">Haben</div>
+                      {konto[j].haben.map((e, k) => (
+                        <div key={k} className="px-2 py-1 flex justify-between border-t border-stone-100">
+                          <span className="text-stone-700">{e[0]}</span>
+                          <span className="font-mono text-stone-800">{e[1].toLocaleString("de-CH")}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Hilfsfunktion: zählt nur "echte" Fälle (keine Abschnittstrenner, keine reinen Infotexte)
+const istZaehlbar = (f) => !f.keineEingabe && f.typ !== "abschnitt" && f.typ !== "info";
+
+function App() {
+  const [activeTab, setActiveTab] = useState(0);
+  const [states, setStates] = useState({});
+
+  const setFallState = (id, newState) => setStates((s) => ({ ...s, [id]: newState }));
+  const getFallState = (id) => states[id] || { entries: null, checked: false, correct: false };
+
+  const stats = useMemo(() => {
+    let total = 0, correct = 0;
+    alleAufgaben.forEach((a) => a.faelle.forEach((f) => {
+      if (!istZaehlbar(f)) return;
+      total++;
+      if (states[f.id]?.correct) correct++;
+    }));
+    return { total, correct, prozent: total > 0 ? Math.round((correct / total) * 100) : 0 };
+  }, [states]);
+
+  const aktuelleAufgabe = alleAufgaben[activeTab];
+
+  return (
+    <div className="min-h-screen bg-stone-50">
+      <div className="bg-[#1B6B63] text-white">
+        <div className="max-w-5xl mx-auto px-6 py-8">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <p className="text-xs tracking-widest uppercase text-[#F9E47A] mb-1">Finanzielles Rechnungswesen I · HFW</p>
+              <h1 className="font-serif text-3xl md:text-4xl font-bold">Block 2 · Übungsplattform</h1>
+              <p className="text-sm text-stone-200 mt-2">Kundenforderungen, Wertberichtigungen, Anzahlungen, Kundenanalyse</p>
+            </div>
+            <div className="flex items-center gap-3 bg-white/10 rounded-lg px-5 py-3">
+              <AwardIcon className="w-6 h-6 text-[#F9E47A]" />
+              <div>
+                <p className="text-xs text-stone-200">Fortschritt</p>
+                <p className="font-mono text-lg font-bold">{stats.correct} / {stats.total} <span className="text-[#F9E47A]">({stats.prozent}%)</span></p>
+              </div>
+            </div>
+          </div>
+          <div className="w-full bg-white/10 rounded-full h-2 mt-4 overflow-hidden">
+            <div className="bg-[#F9E47A] h-2 rounded-full transition-all duration-500" style={{ width: `${stats.prozent}%` }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border-b border-stone-200 sticky top-0 z-10 no-print">
+        <div className="max-w-5xl mx-auto px-6">
+          <div className="flex overflow-x-auto">
+            {alleAufgaben.map((a, i) => {
+              const gesamt = a.faelle.filter(istZaehlbar).length;
+              const geloest = a.faelle.filter((f) => istZaehlbar(f) && states[f.id]?.correct).length;
+              return (
+                <button key={i} onClick={() => setActiveTab(i)} className={`px-5 py-4 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === i ? "border-[#1B6B63] text-[#1B6B63]" : "border-transparent text-stone-500 hover:text-stone-800"}`}>
+                  <span className="block text-xs tracking-widest uppercase">{a.tabLabel}</span>
+                  <span className="block mt-1">{geloest}/{gesamt}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="mb-6">
+          <h2 className="font-serif text-2xl text-stone-800">{aktuelleAufgabe.title}</h2>
+          <p className="text-stone-600 text-sm mt-1">{aktuelleAufgabe.subtitle}</p>
+          {aktuelleAufgabe.context && <p className="text-stone-700 text-sm mt-3 leading-relaxed bg-stone-50 border-l-4 border-stone-300 px-4 py-3 rounded">{aktuelleAufgabe.context}</p>}
+        </div>
+
+        {aktuelleAufgabe.sachverhalt && <SachverhaltBox daten={aktuelleAufgabe.sachverhalt} />}
+
+        <div className="bg-amber-50 border-l-4 border-[#F9E47A] rounded-md p-4 mb-6">
+          <div className="flex gap-3">
+            <BookOpenIcon className="w-5 h-5 text-[#1B6B63] flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-stone-700">
+              <p className="font-semibold mb-1">So funktioniert es</p>
+              <p>Buchungen: Soll, Haben und Betrag eingeben (alternative Schreibweisen wie Debitoren, Kreditoren, Warenertrag werden akzeptiert). Kennzahlen: Wert eintippen, ±Toleranz wird berücksichtigt. Reflexionsfragen: Antwort selbst notieren, dann Musterlösung aufdecken.</p>
+            </div>
+          </div>
+        </div>
+
+        {aktuelleAufgabe.faelle.map((fall) => (
+          <RenderCard key={fall.id} fall={fall} state={getFallState(fall.id)} setState={(ns) => setFallState(fall.id, ns)} />
+        ))}
+
+        {aktuelleAufgabe.kontenLoesung && <KontenAnzeige daten={aktuelleAufgabe.kontenLoesung} />}
+
+        <div className="flex justify-between mt-8 pt-6 border-t border-stone-200 no-print">
+          <button onClick={() => setActiveTab(Math.max(0, activeTab - 1))} disabled={activeTab === 0} className="px-4 py-2 text-sm font-medium text-stone-700 hover:text-[#1B6B63] disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"><ChevronLeftIcon className="w-4 h-4" />Vorherige Aufgabe</button>
+          <button onClick={() => setActiveTab(Math.min(alleAufgaben.length - 1, activeTab + 1))} disabled={activeTab === alleAufgaben.length - 1} className="px-4 py-2 text-sm font-medium text-stone-700 hover:text-[#1B6B63] disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2">Nächste Aufgabe<ChevronRightIcon className="w-4 h-4" /></button>
+        </div>
+      </div>
+
+      <div className="bg-stone-100 border-t border-stone-200 py-6 mt-12">
+        <div className="max-w-5xl mx-auto px-6 text-center">
+          <p className="text-xs text-stone-500">finanzunterricht.ch · Davide Bianchini · Bildungszentrum für Wirtschaft Weinfelden</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
