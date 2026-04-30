@@ -63,7 +63,8 @@ const accountMatchers = {
   aoertrag: { contains: ["ausserordentlich", "aussordentlich", "aoertrag", "periodenfremd"], excludes: ["aufwand"] },
   skontoertrag: { contains: ["skonto"], excludes: ["verkauf", "kunden", "minderung"] },
   maschinen: { contains: ["maschine", "sachanlage", "anlagevermoegen"], excludes: [] },
-  anzahlungenlieferanten: { contains: ["anzahlung", "geleisteteanzahlung"], excludes: ["kunden"] },
+  anzahlungenlieferanten: { contains: ["anzahlunganlieferant", "anzahlunglieferant", "anzahlungenanlieferanten", "anzahlungenlieferanten", "geleisteteanzahlung", "anzahlungmaschine", "anzahlungenmaschinen"], excludes: ["kunden", "erhalten"] },
+  anzahlungenkunden: { contains: ["anzahlungkunde", "anzahlungenkunden", "erhalteneanzahlung", "anzahlungenvonkunden"], excludes: ["lieferant", "geleistet", "maschine"] },
   privat: { contains: ["privat"], excludes: ["aufwand", "ertrag"] },
   erfolgsrechnung: { contains: ["erfolg", "gewinnundverlust"], excludes: [] },
   erloesminderungen: { contains: ["erloesminderung", "rabatt", "kundenskonto", "verkaufsskonto", "skontiverkauf"], excludes: [] },
@@ -107,6 +108,7 @@ const displayNames = {
   betriebsertrag: "Betriebsertrag", warenaufwand: "Warenaufwand",
   verlusteausforderungen: "Verluste aus Forderungen L+L", aoertrag: "Ausserordentlicher Ertrag",
   skontoertrag: "Skontoertrag", maschinen: "Maschinen", anzahlungenlieferanten: "Anzahlungen an Lieferanten",
+  anzahlungenkunden: "Anzahlungen Kunden",
   privat: "Privat", erfolgsrechnung: "Erfolgsrechnung", erloesminderungen: "Erlösminderungen",
 };
 
@@ -175,15 +177,41 @@ const aufgabe3 = {
 };
 
 const aufgabe4 = {
-  title: "Aufgabe 4: Anzahlungen von Lieferanten",
-  subtitle: "Gallo Maschinenfabrik AG, Kaufpreis CHF 900'000",
+  title: "Aufgabe 4: Anzahlungen an Lieferanten (Käufersicht)",
+  subtitle: "Gallo Maschinenfabrik AG kauft, Kaufpreis CHF 900'000",
   tabLabel: "Aufgabe 4",
-  context: "Zahlungs- und Lieferbedingungen: 1/3 Anzahlung bei Bestellung, 1/3 bei Lieferung (15.08.), Rest 2 Monate nach Lieferung. Alle Zahlungen über Bank.",
+  context: "Wir sind die Gallo Maschinenfabrik AG und kaufen vier Maschinen. 1/3 Anzahlung bei Bestellung, 1/3 bei Lieferung (15.08.), Rest 2 Monate nach Lieferung. Alle Zahlungen über Bank. Geleistete Anzahlungen werden auf einem Aktivkonto («Anzahlungen an Lieferanten») gebucht.",
   faelle: [
     { id: "4-1", label: "Fall 1 · Bestellung", text: "Lieferant sendet Rechnung über Anzahlung CHF 300'000, wir bezahlen sofort. (2 Buchungen)", anzahlBuchungen: 2, loesungen: [[{ sollKeys: ["anzahlungenlieferanten"], habenKeys: ["verbindlichkeiten"], betrag: 300000 }, { sollKeys: ["verbindlichkeiten"], habenKeys: ["bank"], betrag: 300000 }]] },
     { id: "4-2", label: "Fall 2 · Lieferung 15.08.", text: "Lieferung der Maschinen. Restrechnung über CHF 600'000 erhalten, zweites Drittel CHF 300'000 bezahlt. (3 Buchungen)", anzahlBuchungen: 3, loesungen: [[{ sollKeys: ["maschinen"], habenKeys: ["verbindlichkeiten"], betrag: 900000 }, { sollKeys: ["verbindlichkeiten"], habenKeys: ["anzahlungenlieferanten"], betrag: 300000 }, { sollKeys: ["verbindlichkeiten"], habenKeys: ["bank"], betrag: 300000 }]] },
     { id: "4-3", label: "Fall 3 · Restzahlung", text: "Restzahlung CHF 300'000 zwei Monate nach Lieferung.", loesungen: [[{ sollKeys: ["verbindlichkeiten"], habenKeys: ["bank"], betrag: 300000 }]] },
   ],
+};
+
+const aufgabe5 = {
+  title: "Aufgabe 5: Anzahlungen von Kunden (Verkäufersicht)",
+  subtitle: "Maschinenbau Gerber AG verkauft an Müller Handwerk AG, Verkaufspreis CHF 900'000",
+  tabLabel: "Aufgabe 5",
+  context: "Wir sind die Maschinenbau Gerber AG und verkaufen vier Spezialmaschinen an die Müller Handwerk AG. Spiegelbild zu Aufgabe 4 aus Verkäufersicht. Erhaltene Anzahlungen werden auf einem Passivkonto («Anzahlungen Kunden») gebucht und bei Lieferung als Betriebsertrag realisiert. Zahlungs- und Lieferbedingungen: 1/3 Anzahlung bei Auftragserteilung, 1/3 bei Lieferung (15.08.), Rest 2 Monate nach Lieferung. Alle Zahlungen über Bank.",
+  faelle: [
+    { id: "5-1", label: "Fall 1 · Auftragserteilung", text: "Wir stellen dem Kunden die Rechnung über die vereinbarte Anzahlung (1/3 = CHF 300'000). Der Kunde überweist den Betrag umgehend auf unser Bankkonto. (2 Buchungen)", anzahlBuchungen: 2, loesungen: [[{ sollKeys: ["forderungen"], habenKeys: ["anzahlungenkunden"], betrag: 300000 }, { sollKeys: ["bank"], habenKeys: ["forderungen"], betrag: 300000 }]] },
+    { id: "5-2", label: "Fall 2 · Lieferung 15.08.", text: "Mit der Lieferung stellen wir dem Kunden die Restrechnung über CHF 600'000. Die Anzahlung von CHF 300'000 wird als Betriebsertrag realisiert. Der Kunde bezahlt das zweite Drittel von CHF 300'000. (3 Buchungen)", anzahlBuchungen: 3, loesungen: [[{ sollKeys: ["forderungen"], habenKeys: ["betriebsertrag"], betrag: 600000 }, { sollKeys: ["anzahlungenkunden"], habenKeys: ["betriebsertrag"], betrag: 300000 }, { sollKeys: ["bank"], habenKeys: ["forderungen"], betrag: 300000 }]] },
+    { id: "5-3", label: "Fall 3 · Restzahlung", text: "Den Restbetrag von CHF 300'000 erhalten wir zwei Monate nach Lieferung auf unser Bankkonto.", loesungen: [[{ sollKeys: ["bank"], habenKeys: ["forderungen"], betrag: 300000 }]] },
+  ],
+  vergleich: {
+    title: "Direktvergleich Käufer vs. Verkäufer",
+    subtitle: "Aufgabe 4 (Gallo, Käufer) vs. Aufgabe 5 (Gerber, Verkäufer)",
+    cols: ["Aspekt", "Käufer (Aufgabe 4)", "Verkäufer (Aufgabe 5)"],
+    rows: [
+      ["Konto", "Anzahlungen an Lieferanten", "Anzahlungen Kunden"],
+      ["Kontoart", "Aktivkonto (geleistete Anz.)", "Passivkonto (erhaltene Anz.)"],
+      ["Bilanzseite", "Umlaufvermögen", "kurzfristiges Fremdkapital"],
+      ["Bei Anzahlung", "Anz. Lieferanten / Bank", "Bank / Anz. Kunden"],
+      ["Bei Lieferung", "Umbuchung in Maschinen", "Realisierung als Betriebsertrag"],
+      ["Erfolgswirkung", "keine (Aktivierung)", "+900'000 bei Lieferung"],
+      ["Cashflow", "−900'000 (3 Tranchen)", "+900'000 (3 Tranchen)"],
+    ],
+  },
 };
 
 const aufgabe6 = {
@@ -307,7 +335,7 @@ const aufgabe6 = {
   ],
 };
 
-const alleAufgaben = [aufgabe1, aufgabe2, aufgabe3, aufgabe4, aufgabe6];
+const alleAufgaben = [aufgabe1, aufgabe2, aufgabe3, aufgabe4, aufgabe5, aufgabe6];
 
 // ===== Komponenten =====
 const BookingRow = ({ entry, onChange, locked, status, diagnose }) => {
@@ -690,6 +718,58 @@ const SachverhaltBox = ({ daten }) => {
   );
 };
 
+// Vergleichstabelle Käufer vs. Verkäufer (Aufgabe 5)
+const VergleichsAnzeige = ({ daten }) => {
+  const [sichtbar, setSichtbar] = useState(false);
+  if (!sichtbar) {
+    return (
+      <div className="bg-stone-50 rounded-lg p-6 border border-stone-200 mb-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h3 className="font-serif text-lg text-stone-800">{daten.title}</h3>
+            <p className="text-sm text-stone-600 mt-1">{daten.subtitle}</p>
+          </div>
+          <button onClick={() => setSichtbar(true)} className="px-4 py-2 bg-[#1B6B63] text-white text-sm font-medium rounded-md hover:bg-[#154f49] transition-colors flex items-center gap-2"><EyeIcon className="w-4 h-4" />Vergleich einblenden</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="bg-white rounded-lg border border-stone-200 p-6 mb-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h3 className="font-serif text-lg text-stone-800">{daten.title}</h3>
+          <p className="text-sm text-stone-600 mt-1">{daten.subtitle}</p>
+        </div>
+        <button onClick={() => setSichtbar(false)} className="text-sm text-stone-500 hover:text-stone-700 flex items-center gap-1 no-print"><EyeOffIcon className="w-4 h-4" />Verbergen</button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr>
+              <th className="bg-stone-100 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-stone-600 border border-stone-200">{daten.cols[0]}</th>
+              <th className="bg-blue-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-blue-900 border border-stone-200">{daten.cols[1]}</th>
+              <th className="bg-amber-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-amber-900 border border-stone-200">{daten.cols[2]}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {daten.rows.map((row, i) => (
+              <tr key={i}>
+                <td className="px-3 py-2 font-semibold text-stone-700 bg-stone-50 border border-stone-200">{row[0]}</td>
+                <td className="px-3 py-2 text-stone-700 border border-stone-200">{row[1]}</td>
+                <td className="px-3 py-2 text-stone-700 border border-stone-200">{row[2]}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-4 p-3 bg-amber-50 border-l-4 border-[#F9E47A] rounded-md text-xs text-stone-700">
+        <strong>Merksatz:</strong> Geleistete Anzahlungen (Käufer) sind <em>aktiv</em>, erhaltene Anzahlungen (Verkäufer) sind <em>passiv</em>. Beim Käufer wird die Anzahlung später in den Vermögenswert umgebucht, beim Verkäufer in den Betriebsertrag realisiert.
+      </div>
+    </div>
+  );
+};
+
 // Karten-Router
 const RenderCard = ({ fall, state, setState }) => {
   if (fall.typ === "abschnitt") return <AbschnittsTrenner label={fall.label} />;
@@ -846,6 +926,7 @@ function App() {
         ))}
 
         {aktuelleAufgabe.kontenLoesung && <KontenAnzeige daten={aktuelleAufgabe.kontenLoesung} />}
+        {aktuelleAufgabe.vergleich && <VergleichsAnzeige daten={aktuelleAufgabe.vergleich} />}
 
         <div className="flex justify-between mt-8 pt-6 border-t border-stone-200 no-print">
           <button onClick={() => setActiveTab(Math.max(0, activeTab - 1))} disabled={activeTab === 0} className="px-4 py-2 text-sm font-medium text-stone-700 hover:text-[#1B6B63] disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"><ChevronLeftIcon className="w-4 h-4" />Vorherige Aufgabe</button>
